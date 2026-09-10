@@ -1,0 +1,32 @@
+# 매일 릴리스 에셋의 누적 다운로드 수를 stats/downloads.csv에 한 줄씩 쌓는다.
+# GitHub의 download_count는 누적값만 제공하므로, 일별 스냅샷을 모아 추이를 만든다.
+name: download-stats
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 매일 00:00 UTC (09:00 KST)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append download counts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p stats
+          [ -f stats/downloads.csv ] || echo "date,tag,asset,downloads" > stats/downloads.csv
+          DATE=$(date -u +%F)
+          gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq ".[] | select(.draft==false) | .tag_name as \$t | .assets[] | [\"$DATE\", \$t, .name, (.download_count|tostring)] | @csv" \
+            >> stats/downloads.csv
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stats/downloads.csv
+          git diff --cached --quiet || git commit -m "stats: ${DATE} 다운로드 스냅샷"
+          git push
